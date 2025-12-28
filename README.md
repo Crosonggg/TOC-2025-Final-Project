@@ -39,19 +39,17 @@ cd TOC-2025-Final-Project
 ```bash
 pip install -r requirements.txt
 ```
-### 2) Configure API Key
+### 3) Configure API Key
 將 `API.txt` 內容改成你的 API key：
 
 
-### 3) run
+### 4) run
 ```bash
 streamlit run app.py
 ```
 
 ---
 
-## Demo 
-![螢幕擷取畫面 2025-12-29 012220](https://hackmd.io/_uploads/rkLDDkkVZl.png)
 
 
 ---
