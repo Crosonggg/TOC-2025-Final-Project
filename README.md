@@ -14,99 +14,60 @@ This project presents an Intelligent Culinary Agent designed to assist users in 
 stateDiagram-v2
     [*] --> Init
 
-    Init --> LoadAPIKey: read API.txt
-    LoadAPIKey --> Ready: API_KEY exists
-    LoadAPIKey --> ReadyNoKey: API_KEY missing
+    Init --> Ready: session_state init + UI render
+    Ready --> WaitingInput: no new user_input
 
-    ReadyNoKey --> ReadyNoKey: user input\n(show warning)\n(no LLM call)
-    ReadyNoKey --> Ready: API.txt added later\n(reload)
+    WaitingInput --> UserSubmitted: user_input received
+    UserSubmitted --> RerunAfterUser: append user msg + st.rerun
 
-    Ready --> Idle
-    Idle --> UserSubmit: user clicks "送出"\n& input not empty
+    RerunAfterUser --> CheckingLastMsg: rerun renders + checks last role
+    CheckingLastMsg --> Generating: last role == user
+    CheckingLastMsg --> WaitingInput: last role != user
 
-    UserSubmit --> AppendUserMsg: ui_messages += user bubble
-    AppendUserMsg --> AgentStart: ask_chef_agent()
+    Generating --> DishDeciding: call_llm(決定菜名)
+    DishDeciding --> RecipeGenerating: call_llm(生成JSON食譜)
+    RecipeGenerating --> ParseRecipe: parse_recipe_json
 
-    state AgentStart {
-        [*] --> DecideDish
-        DecideDish --> DecideDishCall: call_llm(prompt_decide)
-        DecideDishCall --> DecideDishOK: got dish text
-        DecideDishCall --> LLMFail: no response after retries
+    ParseRecipe --> ResponseReady: success
+    ParseRecipe --> ResponseReady: fail -> fallback
 
-        DecideDishOK --> BuildRecipePrompt
-        BuildRecipePrompt --> GetRecipe
-        GetRecipe --> GetRecipeCall: call_llm(prompt_recipe)
-        GetRecipeCall --> GotRecipeText: got raw text
-        GetRecipeCall --> LLMFail: no response after retries
-
-        GotRecipeText --> ParseJSON: parse_recipe_json()
-        ParseJSON --> ParsedOK: valid JSON
-        ParseJSON --> ParsedFail: invalid JSON
-
-        ParsedFail --> FallbackRecipe: replace | -> ｜\nsteps=[raw or error msg]
-        ParsedOK --> ReturnOK
-        FallbackRecipe --> ReturnOK
-
-        LLMFail --> ReturnErr
-        ReturnOK --> [*]
-        ReturnErr --> [*]
-    }
-
-    AgentStart --> ShowError: res.ok == false
-    AgentStart --> ShowResult: res.ok == true
-
-    ShowError --> UpdateHistoryErr: llm_history += (user, error)
-    ShowResult --> AppendAssistantResult: ui_messages += result bubble
-    AppendAssistantResult --> UpdateHistoryBrief: llm_history += (user, brief summary)
-
-    UpdateHistoryErr --> TrimHistory: keep last MAX_HISTORY_TURNS*2 msgs
-    UpdateHistoryBrief --> TrimHistory
-    TrimHistory --> Rerun: st.rerun()
-
-    Rerun --> Idle
-
+    ResponseReady --> RerunAfterAssistant: append assistant + history + trim + st.rerun
+    RerunAfterAssistant --> WaitingInput
 
 ```
 ## DAG
 ```mermaid
 flowchart TD
-    A["User submits input"] --> B["Append user bubble to ui_messages"]
-    B --> C["Run ask_chef_agent"]
+  U["User input from st.chat_input"] --> M1["Append user text into session_state.messages"]
+  M1 --> R1["st.rerun"]
 
-    subgraph Agent["Agent: two LLM calls + parsing"]
-        C --> D["LLM step 1: decide dish name"]
-        D --> E["call_llm (with retries)"]
+  R1 --> UI["Render sidebar and chat history"]
+  UI --> CHK{Is last message role user?}
 
-        E -->|success| F["Clean dish text"]
-        E -->|fail| Z["Return error (no response or missing key)"]
+  CHK -- "No" --> IDLE["Idle, wait for next input"]
+  CHK -- "Yes" --> AG["ask_chef_agent(history, last_user_text)"]
 
-        F --> G["LLM step 2: request recipe JSON"]
-        G --> H["call_llm (with retries)"]
+  AG --> D1["call_llm: decide dish name"]
+  D1 --> CLN["Clean dish string"]
+  CLN --> D2["call_llm: generate recipe JSON"]
+  D2 --> PARSE["parse_recipe_json"]
 
-        H -->|success| I["Parse JSON"]
-        H -->|fail| Z
+  PARSE --> OK{JSON parsed?}
+  OK -- "Yes" --> RES1["Build result object with recipe"]
+  OK -- "No" --> RES2["Fallback recipe object"]
 
-        I -->|valid| J["Return OK: dish + recipe object"]
-        I -->|invalid| K["Fallback recipe text (sanitize pipes)"]
-        K --> J
-    end
+  RES1 --> OUT["Append assistant recipe into session_state.messages"]
+  RES2 --> OUT
 
-    Z --> L["Show error bubble"]
-    J --> M["Show result bubble (tables + steps)"]
-
-    L --> N["Update llm_history: user + error"]
-    M --> O["Update llm_history: user + brief summary"]
-
-    N --> P["Trim history to last N messages"]
-    O --> P
-
-    P --> Q["st.rerun (re-render UI)"]
+  OUT --> H1["Append simplified texts into session_state.history"]
+  H1 --> TRIM["trim_history"]
+  TRIM --> R2["st.rerun"]
+  R2 --> UI
 
 
 ```
 
 
----
 
 ##  專案結構
 ```
