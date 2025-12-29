@@ -6,7 +6,7 @@ import requests
 import streamlit as st
 
 # ===========================
-# 設定
+# 1. 設定與 API
 # ===========================
 def get_api_key():
     try:
@@ -21,92 +21,70 @@ MODEL_NAME = "gpt-oss:120b"
 MAX_HISTORY_TURNS = 8
 
 SYSTEM_PROMPT = (
-    "你是一位親切且務實的家庭主婦主廚助理。"
+    "你是一位經驗豐富的台灣家庭主婦主廚助理。"
     "你會根據使用者提供的食材、偏好與限制（例如：不能吃辣、想清淡、要快速）"
     "推薦一道菜並提供可操作的詳細步驟。"
-    "重要：絕對不要輸出 Markdown/HackMD 表格（不要出現 |---| 或 | 欄位 |）。"
-    "食譜請以 JSON 輸出（會在提示中給你結構），不要多餘文字、不要 markdown。"
-    "重要 : 全部都以繁體中文輸出。"
+    "你的專長是將使用者提供的食材，變成一道『台灣餐桌上常見、通俗且美味』的料理。"
+    "食譜請以 JSON 輸出，並嚴格使用繁體中文。"
 )
 
 # ===========================
-# UI：泡泡 + 底部固定輸入列
+# 2. UI CSS (修正版：不隱藏 Header，找回側邊欄按鈕)
 # ===========================
 def inject_ui_css():
     st.markdown(
         """
 <style>
-.block-container{
-  max-width: 880px;
-  padding-top: 2.0rem !important;
-  padding-bottom: 10rem !important;
+
+.block-container {
+    padding-bottom: 6rem !important;
 }
-.chat-wrap{
-  display:flex;
-  flex-direction:column;
-  gap: 12px;
-  margin-top: 0.6rem;
-}
-.bubble{
-  max-width: 82%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  word-break: break-word;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.06);
-  font-size: 0.98rem;
-}
-.bubble.user{ align-self:flex-end; background:#DCF8C6; }
-.bubble.assistant{ align-self:flex-start; background:#F3F4F6; }
-@media (prefers-color-scheme: dark) {
-  .bubble.user{ background:#1f6f43; color:#fff; }
-  .bubble.assistant{ background:#2A2A2A; color:#fff; }
-}
-.bubble h3, .bubble h4{ margin: 0.2rem 0 0.35rem 0; }
-.bubble hr{
-  margin: 0.65rem 0;
-  border: none;
-  border-top: 1px solid rgba(0,0,0,0.08);
-}
-@media (prefers-color-scheme: dark) {
-  .bubble hr{ border-top: 1px solid rgba(255,255,255,0.12); }
+.chat-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
 }
 
-.table{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.4rem 0 0.6rem 0;
-  font-size: 0.95rem;
+/* 對話氣泡樣式 */
+.bubble {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    font-size: 1rem;
 }
-.table th, .table td{
-  border: 1px solid rgba(0,0,0,0.12);
-  padding: 8px 10px;
-  text-align: left;
-  vertical-align: top;
+.bubble.user { 
+    align-self: flex-end; 
+    background: #DCF8C6; 
+    border-bottom-right-radius: 4px;
 }
-.table th{ background: rgba(0,0,0,0.04); }
+.bubble.assistant { 
+    align-self: flex-start; 
+    background: #F3F4F6; 
+    border-bottom-left-radius: 4px;
+}
 @media (prefers-color-scheme: dark) {
-  .table th, .table td{ border: 1px solid rgba(255,255,255,0.18); }
-  .table th{ background: rgba(255,255,255,0.06); }
+    .bubble.user { background: #1f6f43; color: #fff; }
+    .bubble.assistant { background: #2A2A2A; color: #fff; }
 }
 
-.bottom-bar{
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 1.1rem;
-  width: min(880px, calc(100% - 2rem));
-  z-index: 9999;
-  background: rgba(255,255,255,0.96);
-  border-radius: 1.25rem;
-  box-shadow: 0 10px 28px rgba(0,0,0,0.12);
-  padding: 0.7rem 0.8rem;
+/* 表格樣式 */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0;
+    font-size: 0.95rem;
 }
-@media (prefers-color-scheme: dark) {
-  .bottom-bar{ background: rgba(17,17,17,0.92); }
+.table th, .table td {
+    border: 1px solid rgba(128,128,128,0.2);
+    padding: 8px;
+    text-align: left;
 }
-div[data-testid="stChatInput"]{ display:none !important; }
+.table th { background: rgba(128,128,128,0.1); }
+
 </style>
 """,
         unsafe_allow_html=True,
@@ -128,216 +106,185 @@ def render_table(headers, rows):
     return f"<table class='table'><thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>"
 
 # ===========================
-# LLM（重試）
+# 3. LLM 邏輯
 # ===========================
 def call_llm(messages, retries=2):
     global API_KEY
-
-    if not API_KEY:
-        return None
+    if not API_KEY: return None
 
     url = f"{BASE_URL}/api/chat"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": MODEL_NAME, "messages": messages, "stream": False, "temperature": 0.7}
+    payload = {"model": MODEL_NAME, "messages": messages, "stream": False, "temperature": 0.6}
 
     for i in range(retries + 1):
         try:
-            with st.status(f"LLM 思考中…（第 {i+1} 次嘗試）", expanded=False):
-                r = requests.post(url, headers=headers, json=payload, timeout=180)
+            r = requests.post(url, headers=headers, json=payload, timeout=120)
             if r.status_code == 200:
-                data = r.json()
-                content = data.get("message", {}).get("content", "")
-                if content:
-                    return content
-            st.warning(f"⚠️ 伺服器回傳錯誤代碼: {r.status_code}")
-        except requests.exceptions.Timeout:
-            st.warning("⏳ Timeout，正在重試…")
-        except Exception as e:
-            st.error(f"❌ 連線錯誤: {e}")
-        time.sleep(2)
+                content = r.json().get("message", {}).get("content", "")
+                if content: return content
+        except Exception:
+            time.sleep(1)
     return None
 
 def trim_history(history):
-    max_msgs = MAX_HISTORY_TURNS * 2
-    return history[-max_msgs:] if len(history) > max_msgs else history
+    return history[-(MAX_HISTORY_TURNS * 2):]
 
 def build_messages(history, user_prompt):
     return [{"role": "system", "content": SYSTEM_PROMPT}] + history + [{"role": "user", "content": user_prompt}]
 
 def parse_recipe_json(text: str):
-    if not isinstance(text, str):
-        return None
-    cleaned = text.strip()
-    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
+    if not text: return None
+    cleaned = re.sub(r"^```(?:json)?", "", text.strip(), flags=re.MULTILINE)
+    cleaned = re.sub(r"```$", "", cleaned, flags=re.MULTILINE).strip()
     try:
-        obj = json.loads(cleaned)
-        obj.setdefault("servings", "")
-        obj.setdefault("ingredients", [])
-        obj.setdefault("seasonings", [])
-        obj.setdefault("steps", [])
-        obj.setdefault("tips", [])
-        obj.setdefault("alternatives", [])
-        return obj
-    except Exception:
+        return json.loads(cleaned)
+    except:
         return None
 
-# ===========================
-# Agent（無影片）
-# ===========================
 def ask_chef_agent(llm_history, user_input):
+    # 步驟一：決定菜名 (強調通俗菜名)
     prompt_decide = (
-        f"根據對話內容與使用者最新輸入：{user_input}\n"
-        f"請推薦『一道』最合適的菜名，只回答菜名，不要標點符號。"
+        f"使用者輸入：{user_input}\n"
+        f"請根據上述輸入，推薦『一道』最合適的台灣家庭料理菜名。\n"
+        f"規則：\n"
+        f"1. 必須是通俗、常見的菜名（例如：『番茄炒蛋』、『青椒炒肉絲』）。\n"
+        f"2. 絕對不要機械式地將食材拼湊（❌錯誤範例：『青椒胡椒炒』、『蛋番茄』）。\n"
+        f"3. 如果食材太少，請自動聯想最常見的搭配。\n"
+        f"4. 請只回答菜名，不要有任何標點符號或解釋。"
     )
+    
     dish = call_llm(build_messages(llm_history, prompt_decide))
     if not dish:
-        return {"ok": False, "error": "伺服器沒有回應（或缺少 API Key）。可稍後再試。"}
-    dish = dish.strip().replace("。", "").replace("【", "").replace("】", "")
+        return {"ok": False, "error": "AI 正在忙碌中，請稍後再試。"}
+    
+    dish = dish.strip().replace("。", "").replace("！", "").split("\n")[0]
 
+    # 步驟二：生成食譜
     prompt_recipe = f"""
-使用者最新輸入：{user_input}
 料理名稱：{dish}
+使用者原始需求：{user_input}
 
-請輸出『純 JSON』，不要任何多餘文字、不要 markdown、不要表格語法。
-JSON 內的所有內容（食材、步驟、備註）都必須嚴格使用繁體中文輸出。
-JSON 結構必須是：
+請針對這道菜輸出『純 JSON』食譜。
+結構如下（所有內容皆為繁體中文）：
 {{
-  "servings": "2–3 人",
-  "ingredients": [{{"name":"", "amount":"", "note":""}}, ...],
-  "seasonings":  [{{"name":"", "amount":"", "note":""}}, ...],
-  "steps": ["", "", ...],
-  "tips": ["", ...],
-  "alternatives": ["", ...]
+  "servings": "例如：2-3 人份",
+  "ingredients": [{{"name":"食材名", "amount":"數量", "note":"切法或備註"}}],
+  "seasonings":  [{{"name":"調味料", "amount":"數量", "note":""}}],
+  "steps": ["步驟1", "步驟2", ...],
+  "tips": ["小撇步1", ...],
+  "alternatives": ["若沒有某食材可改用..."]
 }}
 """.strip()
 
     recipe_raw = call_llm(build_messages(llm_history, prompt_recipe))
-    recipe = parse_recipe_json(recipe_raw or "")
-    if recipe is None:
-        fallback = (recipe_raw or "").replace("|", "｜")
-        recipe = {
-            "servings": "",
-            "ingredients": [],
-            "seasonings": [],
-            "steps": [fallback] if fallback else ["（食譜生成失敗，請稍後再試）"],
-            "tips": [],
-            "alternatives": []
-        }
+    recipe = parse_recipe_json(recipe_raw)
 
+    if not recipe:
+        recipe = {
+            "servings": "未知",
+            "ingredients": [], "seasonings": [],
+            "steps": ["抱歉，食譜生成格式錯誤，請重試一次。"],
+            "tips": [], "alternatives": []
+        }
+    
     return {"ok": True, "dish": dish, "recipe": recipe}
 
 # ===========================
-# App
+# 4. 主程式 App
 # ===========================
-st.set_page_config(page_title="Chef Agent", page_icon="🥘", layout="centered", initial_sidebar_state="auto")
+# 重要修正：initial_sidebar_state="expanded" 確保側邊欄預設是打開的
+st.set_page_config(
+    page_title="Chef Agent", 
+    page_icon="🍳", 
+    layout="centered", 
+    initial_sidebar_state="expanded" 
+)
+
 inject_ui_css()
 
-if "ui_messages" not in st.session_state:
-    st.session_state.ui_messages = []
-if "llm_history" not in st.session_state:
-    st.session_state.llm_history = []
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "history" not in st.session_state:
+    st.session_state.history = []
 
+# 這就是左邊的收闔框 (Sidebar)
 with st.sidebar:
-    st.title("🥦 Chef Agent")
-
-    if st.button("🧹 清空對話", use_container_width=True):
-        st.session_state.ui_messages = []
-        st.session_state.llm_history = []
+    st.title("🍳 料理助手")
+    st.caption("輸入食材，幫你想一道菜！")
+    
+    # 功能按鈕區
+    if st.button("🗑️ 清空對話", use_container_width=True):
+        st.session_state.messages = []
+        st.session_state.history = []
         st.rerun()
-
+    
     st.divider()
-    st.write("**模型**：", MODEL_NAME)
-    st.write("**伺服器**：", BASE_URL)
-    if not API_KEY:
-        st.warning("找不到 API.txt（需要 API Key 才能呼叫模型）。")
+    st.markdown("### ⚙️ 設定狀態")
+    if API_KEY:
+        st.success("API Key 已載入")
+    else:
+        st.error("⚠️ 未偵測到 API.txt")
+        
+    st.markdown("---")
+    st.info("💡 小提示：你可以輸入「冰箱剩半顆洋蔥」或「只有雞蛋」，主廚會幫你想辦法！")
 
-st.markdown("## 🥘 Chef Agent")
+st.markdown("## 🥘 今晚吃什麼？")
 
-# render chat
+# 渲染歷史訊息
 st.markdown("<div class='chat-wrap'>", unsafe_allow_html=True)
-
-for msg in st.session_state.ui_messages:
+for msg in st.session_state.messages:
     if msg["type"] == "text":
         render_bubble(msg["role"], esc(msg["content"]))
-    else:
-        dish = msg["dish"]
-        recipe = msg["recipe"]
-        parts = [f"<h3>✅ 建議料理：{esc(dish)}</h3>"]
+    elif msg["type"] == "recipe":
+        d = msg["data"]
+        dish_name = d['dish']
+        rec = d['recipe']
+        
+        parts = [f"<h3>✨ 推薦：{esc(dish_name)}</h3>"]
+        if rec.get("servings"):
+            parts.append(f"<p><b>份量：</b>{esc(rec['servings'])}</p>")
+        
+        if rec.get("ingredients"):
+            rows = [(i.get("name"), i.get("amount"), i.get("note","")) for i in rec["ingredients"]]
+            parts.append(render_table(["🥬 食材", "份量", "備註"], rows))
+        
+        if rec.get("seasonings"):
+            rows = [(s.get("name"), s.get("amount"), s.get("note","")) for s in rec["seasonings"]]
+            parts.append(render_table(["🧂 調味", "份量", "備註"], rows))
 
-        if recipe.get("servings"):
-            parts.append(f"<div><b>份量：</b>{esc(recipe.get('servings'))}</div>")
+        if rec.get("steps"):
+            parts.append("<hr><h4>🔥 料理步驟</h4>")
+            for idx, step in enumerate(rec["steps"]):
+                parts.append(f"<div style='margin-bottom:6px;'><b>{idx+1}.</b> {esc(str(step))}</div>")
 
-        ing = recipe.get("ingredients", [])
-        if isinstance(ing, list) and ing:
-            rows = [(i.get("name",""), i.get("amount",""), i.get("note","")) for i in ing]
-            parts.append("<hr><h4>🥬 份量建議</h4>")
-            parts.append(render_table(["食材", "份量", "備註"], rows))
-
-        seas = recipe.get("seasonings", [])
-        if isinstance(seas, list) and seas:
-            rows = [(s.get("name",""), s.get("amount",""), s.get("note","")) for s in seas]
-            parts.append("<hr><h4>🧂 調味料</h4>")
-            parts.append(render_table(["調味料", "份量", "備註"], rows))
-
-        steps = recipe.get("steps", [])
-        if isinstance(steps, list) and steps:
-            parts.append("<hr><h4>👩‍🍳 步驟</h4>")
-            parts.append("".join(f"<div>{idx+1}. {esc(str(s))}</div>" for idx, s in enumerate(steps) if str(s).strip()))
-
-        tips = recipe.get("tips", [])
-        if isinstance(tips, list) and tips:
-            parts.append("<hr><h4>💡 小訣竅</h4>")
-            parts.append("".join(f"<div>- {esc(str(t))}</div>" for t in tips if str(t).strip()))
-
-        alts = recipe.get("alternatives", [])
-        if isinstance(alts, list) and alts:
-            parts.append("<hr><h4>🔁 可替代食材</h4>")
-            parts.append("".join(f"<div>- {esc(str(a))}</div>" for a in alts if str(a).strip()))
+        if rec.get("tips"):
+            parts.append("<div style='margin-top:10px; padding:10px; background:rgba(255,165,0,0.1); border-radius:8px;'>")
+            parts.append("<b>💡 主廚小撇步：</b><br>")
+            for t in rec["tips"]: parts.append(f"- {esc(str(t))}<br>")
+            parts.append("</div>")
 
         render_bubble("assistant", "".join(parts))
-
 st.markdown("</div>", unsafe_allow_html=True)
 
-# bottom input (no prefill)
-st.markdown("<div class='bottom-bar'>", unsafe_allow_html=True)
-with st.form("send_form", clear_on_submit=True):
-    c1, c2 = st.columns([0.86, 0.14])
-    with c1:
-        user_text = st.text_input(
-            "",
-            value="",
-            placeholder="輸入食材或需求（例如：豆腐、青江菜、10分鐘、不吃辣）",
-            label_visibility="collapsed"
-        )
-    with c2:
-        send = st.form_submit_button("送出", use_container_width=True)
-st.markdown("</div>", unsafe_allow_html=True)
+# 底部輸入框
+user_input = st.chat_input("輸入食材（例如：豆腐、雞胸肉）或需求...")
 
-if send and user_text.strip():
-    u = user_text.strip()
-    st.session_state.ui_messages.append({"role": "user", "type": "text", "content": u})
+if user_input:
+    st.session_state.messages.append({"role": "user", "type": "text", "content": user_input})
+    st.rerun()
 
-    with st.spinner("主廚正在想菜色與食譜…"):
-        res = ask_chef_agent(st.session_state.llm_history, u)
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    last_user_text = st.session_state.messages[-1]["content"]
+    
+    with st.spinner("👩‍🍳 主廚正在翻閱食譜..."):
+        res = ask_chef_agent(st.session_state.history, last_user_text)
 
-    if not res["ok"]:
-        st.session_state.ui_messages.append({"role": "assistant", "type": "text", "content": f"⚠️ {res['error']}"})
-        st.session_state.llm_history.append({"role": "user", "content": u})
-        st.session_state.llm_history.append({"role": "assistant", "content": res["error"]})
-        st.session_state.llm_history = trim_history(st.session_state.llm_history)
-        st.rerun()
-
-    st.session_state.ui_messages.append({
-        "role": "assistant",
-        "type": "result",
-        "dish": res["dish"],
-        "recipe": res["recipe"]
-    })
-
-    brief = f"推薦料理：{res['dish']}（已提供份量、調味、步驟）。"
-    st.session_state.llm_history.append({"role": "user", "content": u})
-    st.session_state.llm_history.append({"role": "assistant", "content": brief})
-    st.session_state.llm_history = trim_history(st.session_state.llm_history)
-
+    if res["ok"]:
+        st.session_state.messages.append({"role": "assistant", "type": "recipe", "data": res})
+        st.session_state.history.append({"role": "user", "content": last_user_text})
+        st.session_state.history.append({"role": "assistant", "content": f"推薦料理：{res['dish']}"})
+        st.session_state.history = trim_history(st.session_state.history)
+    else:
+        st.session_state.messages.append({"role": "assistant", "type": "text", "content": f"⚠️ {res['error']}"})
+    
     st.rerun()
