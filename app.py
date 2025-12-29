@@ -29,7 +29,7 @@ SYSTEM_PROMPT = (
 )
 
 # ===========================
-# 2. UI CSS (修正版：不隱藏 Header，找回側邊欄按鈕)
+# 2. UI CSS 
 # ===========================
 def inject_ui_css():
     st.markdown(
@@ -142,7 +142,7 @@ def parse_recipe_json(text: str):
         return None
 
 def ask_chef_agent(llm_history, user_input):
-    # 步驟一：決定菜名 (強調通俗菜名)
+    # 步驟一：決定菜名 
     prompt_decide = (
         f"使用者輸入：{user_input}\n"
         f"請根據上述輸入，推薦『一道』最合適的台灣家庭料理菜名。\n"
@@ -192,7 +192,7 @@ def ask_chef_agent(llm_history, user_input):
 # ===========================
 # 4. 主程式 App
 # ===========================
-# 重要修正：initial_sidebar_state="expanded" 確保側邊欄預設是打開的
+
 st.set_page_config(
     page_title="Chef Agent", 
     page_icon="🍳", 
@@ -207,13 +207,13 @@ if "messages" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# 這就是左邊的收闔框 (Sidebar)
+# 左邊的收闔框
 with st.sidebar:
     st.title("🍳 料理助手")
     st.caption("輸入食材，幫你想一道菜！")
     
-    # 功能按鈕區
-    if st.button("🗑️ 清空對話", use_container_width=True):
+   
+    if st.button(" 清空對話", use_container_width=True):
         st.session_state.messages = []
         st.session_state.history = []
         st.rerun()
@@ -230,7 +230,7 @@ with st.sidebar:
 
 st.markdown("## 🥘 今晚吃什麼？")
 
-# 渲染歷史訊息
+
 st.markdown("<div class='chat-wrap'>", unsafe_allow_html=True)
 for msg in st.session_state.messages:
     if msg["type"] == "text":
@@ -266,7 +266,7 @@ for msg in st.session_state.messages:
         render_bubble("assistant", "".join(parts))
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 底部輸入框
+# input
 user_input = st.chat_input("輸入食材（例如：豆腐、雞胸肉）或需求...")
 
 if user_input:
