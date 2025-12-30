@@ -167,6 +167,7 @@ def ask_chef_agent(llm_history, user_input):
 
 請針對這道菜輸出『純 JSON』食譜。
 結構如下（所有內容皆為繁體中文）：
+若有輸出價格，以市售單位為主，並在每一欄的備註中分別寫買一包的價格。
 {{
   "servings": "例如：2-3 人份",
   "ingredients": [{{"name":"食材名", "amount":"數量", "note":"切法或備註"}}],
@@ -255,15 +256,22 @@ for msg in st.session_state.messages:
 
         if rec.get("steps"):
             parts.append("<hr><h4>🔥 料理步驟</h4>")
-            for idx, step in enumerate(rec["steps"]):
-                parts.append(f"<div style='margin-bottom:6px;'><b>{idx+1}.</b> {esc(str(step))}</div>")
+            for step in rec["steps"]:
+                parts.append(f"<div style='margin-bottom:6px;'> {esc(str(step))}</div>")
 
         if rec.get("tips"):
             parts.append("<div style='margin-top:10px; padding:10px; background:rgba(255,165,0,0.1); border-radius:8px;'>")
             parts.append("<b>💡 主廚小撇步：</b><br>")
             for t in rec["tips"]: parts.append(f"- {esc(str(t))}<br>")
             parts.append("</div>")
-
+        if rec.get("alternatives"):
+            
+            parts.append("<div style='margin-top:10px; padding:10px; background:rgba(52, 152, 219, 0.1); border-radius:8px;'>")
+            parts.append("<b>替換方案：</b><br>")
+            for alt in rec["alternatives"]:
+                parts.append(f"- {esc(str(alt))}<br>")
+            
+            parts.append("</div>")
         render_bubble("assistant", "".join(parts))
 st.markdown("</div>", unsafe_allow_html=True)
 
