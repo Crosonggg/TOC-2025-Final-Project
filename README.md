@@ -35,39 +35,6 @@ stateDiagram-v2
     RerunAfterAssistant --> WaitingInput
 
 ```
-## DAG
-```mermaid
-flowchart TD
-  U["User input from st.chat_input"] --> M1["Append user text into session_state.messages"]
-  M1 --> R1["st.rerun"]
-
-  R1 --> UI["Render sidebar and chat history"]
-  UI --> CHK{Is last message role user?}
-
-  CHK -- "No" --> IDLE["Idle, wait for next input"]
-  CHK -- "Yes" --> AG["ask_chef_agent(history, last_user_text)"]
-
-  AG --> D1["call_llm: decide dish name"]
-  D1 --> CLN["Clean dish string"]
-  CLN --> D2["call_llm: generate recipe JSON"]
-  D2 --> PARSE["parse_recipe_json"]
-
-  PARSE --> OK{JSON parsed?}
-  OK -- "Yes" --> RES1["Build result object with recipe"]
-  OK -- "No" --> RES2["Fallback recipe object"]
-
-  RES1 --> OUT["Append assistant recipe into session_state.messages"]
-  RES2 --> OUT
-
-  OUT --> H1["Append simplified texts into session_state.history"]
-  H1 --> TRIM["trim_history"]
-  TRIM --> R2["st.rerun"]
-  R2 --> UI
-
-
-```
-
-
 
 ##  專案結構
 ```
