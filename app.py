@@ -2,6 +2,7 @@ import re
 import time
 import html
 import json
+import os
 import requests
 import streamlit as st
 
@@ -16,8 +17,9 @@ def get_api_key():
         return None
 
 API_KEY = get_api_key()
-BASE_URL = "https://api-gateway.netdb.csie.ncku.edu.tw"
-MODEL_NAME = "gpt-oss:120b"
+# 可用環境變數 GEMINI_MODEL 指定其他你帳號可使用的 Gemini 模型。
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
 MAX_HISTORY_TURNS = 8
 
 SYSTEM_PROMPT = (
@@ -110,19 +112,37 @@ def render_table(headers, rows):
 # ===========================
 def call_llm(messages, retries=2):
     global API_KEY
-    if not API_KEY: return None
+    if not API_KEY:
+        return None
 
-    url = f"{BASE_URL}/api/chat"
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-    payload = {"model": MODEL_NAME, "messages": messages, "stream": False, "temperature": 0.6}
+    # Gemini 的對話角色使用 user / model；system prompt 則以 systemInstruction 傳送。
+    contents = []
+    system_instruction = None
+    for message in messages:
+        if message["role"] == "system":
+            system_instruction = {"parts": [{"text": message["content"]}]}
+        else:
+            role = "model" if message["role"] == "assistant" else "user"
+            contents.append({"role": role, "parts": [{"text": message["content"]}]})
+
+    url = f"{GEMINI_API_URL}/{MODEL_NAME}:generateContent"
+    headers = {"x-goog-api-key": API_KEY, "Content-Type": "application/json"}
+    payload = {
+        "contents": contents,
+        "generationConfig": {"temperature": 0.6},
+    }
+    if system_instruction:
+        payload["systemInstruction"] = system_instruction
 
     for i in range(retries + 1):
         try:
             r = requests.post(url, headers=headers, json=payload, timeout=120)
             if r.status_code == 200:
-                content = r.json().get("message", {}).get("content", "")
+                candidates = r.json().get("candidates", [])
+                parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
+                content = "".join(part.get("text", "") for part in parts)
                 if content: return content
-        except Exception:
+        except requests.RequestException:
             time.sleep(1)
     return None
 
